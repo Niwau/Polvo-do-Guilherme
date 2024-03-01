@@ -3,7 +3,9 @@ const {
   AttachmentBuilder,
   EmbedBuilder,
 } = require("discord.js");
-const { request } = require('undici');
+const { request, Agent, setGlobalDispatcher } = require("undici");
+
+setGlobalDispatcher(new Agent({ connect: { timeout: 60_000 } }));
 
 const createMovieEmbed = ({
   author,
@@ -57,7 +59,7 @@ module.exports = {
       option
         .setName("comentario")
         .setDescription("Comentário sobre a obra a ser avaliada.")
-        .setRequired(false)
+        .setRequired(true)
     ),
   async execute(interaction) {
     const movie = interaction.options.getString("nome");
@@ -75,7 +77,7 @@ module.exports = {
 
       let imageEndpoint = "https://image.tmdb.org/t/p/w500";
 
-      const response = await fetch(
+      const moviesResults = await request(
         "https://api.themoviedb.org/3/search/movie?api_key=API_KEY&query=" +
           movie,
         {
@@ -86,22 +88,25 @@ module.exports = {
         }
       );
 
-      const data = await response.json();
+      const data = await moviesResults.body.json();
 
       imageEndpoint += data.results[0].poster_path;
+      const imageFile = await request(imageEndpoint);
+      const imageBuffer = await imageFile.body.arrayBuffer();
+      const image = Buffer.from(imageBuffer);
 
       const message = await interaction.editReply({
-        files: [new AttachmentBuilder(imageEndpoint, "img.png")],
+        files: [new AttachmentBuilder(image, imageEndpoint)],
         content,
         fetchReply: true,
       });
 
       if (score < 5) {
-        message.react("🤢");
+        await message.react("🤢");
       } else if (score < 8) {
-        message.react("🤔");
+        await message.react("🤔");
       } else {
-        message.react("🤩");
+        await message.react("🤩");
       }
     } catch (error) {
       console.error(error);
