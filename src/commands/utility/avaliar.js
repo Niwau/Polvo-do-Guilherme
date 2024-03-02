@@ -13,17 +13,20 @@ const createMovieEmbed = ({
   movieDescription,
   score,
   comment,
+  avatar,
+  moviePoster,
 }) => {
   const embed = new EmbedBuilder()
     .setAuthor({
       name: `Analisado por ${author}`,
     })
+    .setThumbnail(avatar)
     .setTitle(movie.toUpperCase())
     .setDescription(movieDescription)
     .addFields(
       {
         name: "NOTA",
-        value: score,
+        value: score.toString() + '/10',
         inline: false,
       },
       {
@@ -32,7 +35,7 @@ const createMovieEmbed = ({
         inline: true,
       }
     )
-    .setImage("https://cubedhuang.com/images/alex-knight-unsplash.webp")
+    .setImage(moviePoster)
     .setColor("#a907ab");
   return embed;
 };
@@ -54,6 +57,8 @@ module.exports = {
         .setName("nota")
         .setDescription("Nota da obra a ser avaliada.")
         .setRequired(true)
+        .setMinValue(0)
+        .setMaxValue(10)
     )
     .addStringOption((option) =>
       option
@@ -66,19 +71,13 @@ module.exports = {
     const score = interaction.options.getNumber("nota");
     const comment = interaction.options.getString("comentario");
 
-    const content = `Avaliado por: **${
-      interaction.member.displayName
-    }**\nObra: **${movie}**\nNota: **${score}/10**\nComentário: **${
-      comment ?? "Nenhum comentário."
-    }**`;
-
     try {
       await interaction.deferReply();
 
-      let imageEndpoint = "https://image.tmdb.org/t/p/w500";
+      let imageEndpoint = "https://image.tmdb.org/t/p/original";
 
       const moviesResults = await request(
-        "https://api.themoviedb.org/3/search/movie?api_key=API_KEY&query=" +
+        "https://api.themoviedb.org/3/search/movie?api_key=API_KEY&language=pt-br&query=" +
           movie,
         {
           headers: {
@@ -90,15 +89,25 @@ module.exports = {
 
       const data = await moviesResults.body.json();
 
-      imageEndpoint += data.results[0].poster_path;
-      const imageFile = await request(imageEndpoint);
-      const imageBuffer = await imageFile.body.arrayBuffer();
-      const image = Buffer.from(imageBuffer);
+      if (data.results.length === 0) {
+        return interaction.editReply("O filme não foi encontrado.");
+      }
+
+      imageEndpoint += data.results[0].backdrop_path;
+
+      const embed = createMovieEmbed({
+        author: interaction.member.displayName,
+        movie,
+        score,
+        comment: comment ?? "Nenhum comentário.",
+        movieDescription: data.results[0].overview,
+        avatar: interaction.user.displayAvatarURL({ dynamic: true }),
+        moviePoster: imageEndpoint,
+      });
 
       const message = await interaction.editReply({
-        files: [new AttachmentBuilder(image, imageEndpoint)],
-        content,
         fetchReply: true,
+        embeds: [embed],
       });
 
       if (score < 5) {
@@ -110,7 +119,7 @@ module.exports = {
       }
     } catch (error) {
       console.error(error);
-      interaction.editReply("Erro ao avaliar o filme.");
+      interaction.editReply("❌ Ocorreu um erro ao avaliar o filme.");
     }
   },
 };
